@@ -1,65 +1,205 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+import { useState } from "react";
+import FeedbackView from "./components/FeedbackView";
+import InterviewView from "./components/InterviewView";
+import SetupForm from "./components/SetupForm";
+import { useBackendStatus } from "./hooks/useBackendStatus";
+import { useInterview } from "./hooks/useInterview";
+import { useMicrophone } from "./hooks/useMicrophone";
+import { useSpeechSynthesis } from "./hooks/useSpeechSynthesis";
+import type {
+  ExperienceLevel,
+  Expression,
+  Feedback,
+  InterviewStage,
+  InterviewType,
+  Message,
+} from "./types";
+
+export default function InterviewSimulator() {
+  const [stage, setStage] = useState<InterviewStage>("setup");
+  const [jobRole, setJobRole] = useState("");
+  const [experience, setExperience] = useState<ExperienceLevel>("mid-level");
+  const [interviewType, setInterviewType] =
+    useState<InterviewType>("behavioral");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [userInput, setUserInput] = useState("");
+  const [expression, setExpression] = useState<Expression>("neutral");
+  const [questionCount, setQuestionCount] = useState(0);
+  const [useVoice, setUseVoice] = useState(true);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  const backendStatus = useBackendStatus();
+  const {
+    micPermission,
+    isRecording,
+    isListening,
+    debugInfo,
+    startRecording: startMicRecording,
+    stopRecording: stopMicRecording,
+    testMicrophone,
+  } = useMicrophone();
+
+  const { isSpeaking, speak, cancel } = useSpeechSynthesis(useVoice);
+
+  const {
+    isLoading,
+    startInterview: startInterviewFlow,
+    sendMessage: sendInterviewMessage,
+    generateFeedback: generateInterviewFeedback,
+  } = useInterview({
+    jobRole,
+    experience,
+    interviewType,
+    questionCount,
+    setQuestionCount,
+    setExpression,
+    speak,
+    setStage,
+  });
+
+  const handleStartInterview = async () => {
+    if (!jobRole.trim()) {
+      alert("Please enter a job role");
+      return;
+    }
+
+    if (backendStatus !== "connected") {
+      alert(
+        "Backend server is not running. Please check your API configuration.",
+      );
+      return;
+    }
+
+    try {
+      const initialMessages = await startInterviewFlow();
+      setMessages(initialMessages);
+      setStage("interview");
+    } catch (error) {
+      console.error("Error starting interview:", error);
+      alert(
+        "Failed to start interview. Please check that the API is configured correctly.",
+      );
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!userInput.trim() || isLoading) return;
+
+    try {
+      const updatedMessages = await sendInterviewMessage(messages, userInput);
+      setMessages(updatedMessages);
+      setUserInput("");
+
+      const lastMessage = updatedMessages[updatedMessages.length - 1];
+      const isInterviewComplete =
+        lastMessage.role === "interviewer" &&
+        (lastMessage.content
+          .toLowerCase()
+          .includes("concludes our interview") ||
+          lastMessage.content
+            .toLowerCase()
+            .includes("thank you for your time"));
+
+      if (isInterviewComplete) {
+        const feedbackData = await generateInterviewFeedback(updatedMessages);
+        setFeedback(feedbackData);
+        setStage("feedback");
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      alert("Failed to get response. Please try again.");
+    }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      await startMicRecording();
+    } catch (error) {
+      console.error("Recording error:", error);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      const transcribedText = await stopMicRecording();
+      if (transcribedText) {
+        setUserInput(transcribedText);
+      }
+    } catch (error) {
+      console.error("Recording error:", error);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const resetInterview = () => {
+    setStage("setup");
+    setMessages([]);
+    setUserInput("");
+    setQuestionCount(0);
+    setFeedback(null);
+    setExpression("neutral");
+    cancel();
+  };
+
+  if (stage === "setup") {
+    return (
+      <div suppressHydrationWarning>
+        <SetupForm
+          jobRole={jobRole}
+          setJobRole={setJobRole}
+          experience={experience}
+          setExperience={setExperience}
+          interviewType={interviewType}
+          setInterviewType={setInterviewType}
+          useVoice={useVoice}
+          setUseVoice={setUseVoice}
+          backendStatus={backendStatus}
+          micPermission={micPermission}
+          debugInfo={debugInfo}
+          isLoading={isLoading}
+          onTestMicrophone={testMicrophone}
+          onStartInterview={handleStartInterview}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (stage === "interview") {
+    return (
+      <InterviewView
+        jobRole={jobRole}
+        interviewType={interviewType}
+        experience={experience}
+        questionCount={questionCount}
+        messages={messages}
+        userInput={userInput}
+        setUserInput={setUserInput}
+        isLoading={isLoading}
+        isSpeaking={isSpeaking}
+        isListening={isListening}
+        isRecording={isRecording}
+        expression={expression}
+        useVoice={useVoice}
+        debugInfo={debugInfo}
+        onSendMessage={handleSendMessage}
+        onStartRecording={handleStartRecording}
+        onStopRecording={handleStopRecording}
+        onKeyPress={handleKeyPress}
+      />
+    );
+  }
+
+  if (stage === "feedback" && feedback) {
+    return <FeedbackView feedback={feedback} onReset={resetInterview} />;
+  }
+
+  return null;
 }

@@ -1,0 +1,36 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "eslint.options": {
+    "flags": ["unstable_ts_config"]
+  },
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": null,
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "cSpell.words": [],
+  "compile-hero.disable-compile-files-on-did-save-code": true,
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[nginx]": {
+    "editor.defaultFormatter": "AaaaronZhou.nginx-config-formatter-vscode-extension"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "DotJoshJohnson.xml"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "editor.fontSize": 20
+}
