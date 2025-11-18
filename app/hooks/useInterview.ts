@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { callClaudeAPI } from "../utils/api";
-import type { Message, Feedback, Expression } from "../types";
+import type { Expression, Feedback, Message } from "../types";
+import { chatWithAudio } from "../lib/django-client";
 
 interface UseInterviewParams {
   jobRole: string;
@@ -9,7 +9,7 @@ interface UseInterviewParams {
   questionCount: number;
   setQuestionCount: (count: number | ((prev: number) => number)) => void;
   setExpression: (expr: Expression) => void;
-  speak: (text: string) => Promise<void>;
+  useVoice: boolean;
   setStage: (stage: "setup" | "interview" | "feedback") => void;
 }
 
@@ -20,10 +20,37 @@ export const useInterview = ({
   questionCount,
   setQuestionCount,
   setExpression,
-  speak,
+  useVoice,
   setStage,
 }: UseInterviewParams) => {
   const [isLoading, setIsLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Helper function to play audio from base64
+  const playAudio = async (audioBase64: string): Promise<void> => {
+    if (!audioBase64) return;
+
+    try {
+      setIsSpeaking(true);
+      const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+      await audio.play();
+
+      return new Promise((resolve, reject) => {
+        audio.onended = () => {
+          setIsSpeaking(false);
+          resolve();
+        };
+        audio.onerror = (error) => {
+          console.error("Audio playback error:", error);
+          setIsSpeaking(false);
+          reject(error);
+        };
+      });
+    } catch (error) {
+      console.error("Failed to play audio:", error);
+      setIsSpeaking(false);
+    }
+  };
 
   const startInterview = async (): Promise<Message[]> => {
     setIsLoading(true);
@@ -41,17 +68,18 @@ Your role:
 Keep responses concise and conversational (2-3 sentences max per turn). Start by greeting the candidate and asking your first question.`;
 
     try {
-      const data = await callClaudeAPI({
+      const data = await chatWithAudio({
         messages: [
           {
             role: "user",
             content: "Hello, I'm ready for the interview.",
           },
         ],
-        systemPrompt,
+        system: systemPrompt,
+        include_audio: useVoice,
       });
 
-      const interviewerMessage = data.content[0].text;
+      const interviewerMessage = data.content;
 
       const newMessages: Message[] = [
         { role: "interviewer", content: interviewerMessage },
@@ -59,7 +87,11 @@ Keep responses concise and conversational (2-3 sentences max per turn). Start by
 
       setQuestionCount(1);
       setExpression("encouraging");
-      await speak(interviewerMessage);
+
+      // Play audio if included in response
+      if (data.audio?.data) {
+        await playAudio(data.audio.data);
+      }
 
       return newMessages;
     } catch (error) {
@@ -98,12 +130,16 @@ Your role:
 Keep responses concise and conversational (2-3 sentences max). If this is question 5-7, wrap up the interview.`;
 
     try {
-      const data = await callClaudeAPI({
-        messages: conversationHistory,
-        systemPrompt,
+      const data = await chatWithAudio({
+        messages: conversationHistory as Array<{
+          role: "user" | "assistant";
+          content: string;
+        }>,
+        system: systemPrompt,
+        include_audio: useVoice,
       });
 
-      const interviewerMessage = data.content[0].text;
+      const interviewerMessage = data.content;
 
       const finalMessages: Message[] = [
         ...updatedMessages,
@@ -116,12 +152,18 @@ Keep responses concise and conversational (2-3 sentences max). If this is questi
 
       if (isInterviewComplete) {
         setExpression("encouraging");
-        await speak(interviewerMessage);
+        // Play audio if included in response
+        if (data.audio?.data) {
+          await playAudio(data.audio.data);
+        }
         return finalMessages;
       } else {
         setQuestionCount((prev) => prev + 1);
         setExpression("encouraging");
-        await speak(interviewerMessage);
+        // Play audio if included in response
+        if (data.audio?.data) {
+          await playAudio(data.audio.data);
+        }
         return finalMessages;
       }
     } catch (error) {
@@ -165,13 +207,14 @@ Provide feedback in the following JSON format (respond ONLY with valid JSON, no 
 Be encouraging but honest. Focus on specific examples from the conversation.`;
 
     try {
-      const data = await callClaudeAPI({
+      const data = await chatWithAudio({
         messages: [{ role: "user", content: feedbackPrompt }],
-        systemPrompt: "",
-        maxTokens: 1500,
+        system: "",
+        max_tokens: 1500,
+        include_audio: false,
       });
 
-      let feedbackText = data.content[0].text;
+      let feedbackText = data.content;
       feedbackText = feedbackText
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
@@ -210,9 +253,9 @@ Be encouraging but honest. Focus on specific examples from the conversation.`;
 
   return {
     isLoading,
+    isSpeaking,
     startInterview,
     sendMessage,
     generateFeedback,
   };
 };
-

@@ -13,19 +13,14 @@ interface InterviewViewProps {
   experience: ExperienceLevel;
   questionCount: number;
   messages: Message[];
-  userInput: string;
-  setUserInput: (input: string) => void;
   isLoading: boolean;
   isSpeaking: boolean;
   isListening: boolean;
   isRecording: boolean;
   expression: Expression;
-  useVoice: boolean;
   debugInfo: string;
-  onSendMessage: () => void;
   onStartRecording: () => void;
   onStopRecording: () => void;
-  onKeyPress: (e: React.KeyboardEvent) => void;
 }
 
 export default function InterviewView({
@@ -34,19 +29,14 @@ export default function InterviewView({
   experience,
   questionCount,
   messages,
-  userInput,
-  setUserInput,
   isLoading,
   isSpeaking,
   isListening,
   isRecording,
   expression,
-  useVoice,
   debugInfo,
-  onSendMessage,
   onStartRecording,
   onStopRecording,
-  onKeyPress,
 }: InterviewViewProps) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -86,16 +76,11 @@ export default function InterviewView({
 
           <ConversationPanel
             messages={messages}
-            userInput={userInput}
-            setUserInput={setUserInput}
             isLoading={isLoading}
             isSpeaking={isSpeaking}
             isRecording={isRecording}
-            useVoice={useVoice}
-            onSendMessage={onSendMessage}
             onStartRecording={onStartRecording}
             onStopRecording={onStopRecording}
-            onKeyPress={onKeyPress}
           />
         </div>
       </div>

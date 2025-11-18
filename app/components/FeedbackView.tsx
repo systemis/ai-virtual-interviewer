@@ -52,8 +52,12 @@ export default function FeedbackView({ feedback, onReset }: FeedbackViewProps) {
             <ul className="space-y-2">
               {feedback.strengths.map((strength, idx) => (
                 <li key={idx} className="flex items-start">
-                  <span className="text-green-500 dark:text-green-400 mr-2">✓</span>
-                  <span className="text-gray-700 dark:text-gray-300">{strength}</span>
+                  <span className="text-green-500 dark:text-green-400 mr-2">
+                    ✓
+                  </span>
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {strength}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -66,8 +70,12 @@ export default function FeedbackView({ feedback, onReset }: FeedbackViewProps) {
             <ul className="space-y-2">
               {feedback.areasForImprovement.map((area, idx) => (
                 <li key={idx} className="flex items-start">
-                  <span className="text-orange-500 dark:text-orange-400 mr-2">→</span>
-                  <span className="text-gray-700 dark:text-gray-300">{area}</span>
+                  <span className="text-orange-500 dark:text-orange-400 mr-2">
+                    →
+                  </span>
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {area}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -89,8 +97,12 @@ export default function FeedbackView({ feedback, onReset }: FeedbackViewProps) {
             <ul className="space-y-2">
               {feedback.recommendations.map((rec, idx) => (
                 <li key={idx} className="flex items-start">
-                  <span className="text-blue-500 dark:text-blue-400 mr-2">•</span>
-                  <span className="text-gray-700 dark:text-gray-300">{rec}</span>
+                  <span className="text-blue-500 dark:text-blue-400 mr-2">
+                    •
+                  </span>
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {rec}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -107,4 +119,3 @@ export default function FeedbackView({ feedback, onReset }: FeedbackViewProps) {
     </div>
   );
 }
-

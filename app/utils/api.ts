@@ -1,5 +1,6 @@
+// Use Django backend API URL from environment variable
 const API_BASE_URL =
-  typeof window !== "undefined" ? window.location.origin : "";
+  process.env.NEXT_PUBLIC_DJANGO_API_URL || "http://localhost:8000/api";
 
 export interface ClaudeAPIParams {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
@@ -13,7 +14,7 @@ export const callClaudeAPI = async ({
   maxTokens = 300,
 }: ClaudeAPIParams) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    const response = await fetch(`${API_BASE_URL}/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -41,7 +42,7 @@ export const callClaudeAPI = async ({
 
 export const checkBackendConnection = async (): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/health`);
+    const response = await fetch(`${API_BASE_URL}/health`);
     return response.ok;
   } catch (error) {
     console.error("Backend connection error:", error);

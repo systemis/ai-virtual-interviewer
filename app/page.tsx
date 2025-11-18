@@ -7,7 +7,6 @@ import SetupForm from "./components/SetupForm";
 import { useBackendStatus } from "./hooks/useBackendStatus";
 import { useInterview } from "./hooks/useInterview";
 import { useMicrophone } from "./hooks/useMicrophone";
-import { useSpeechSynthesis } from "./hooks/useSpeechSynthesis";
 import type {
   ExperienceLevel,
   Expression,
@@ -41,10 +40,9 @@ export default function InterviewSimulator() {
     testMicrophone,
   } = useMicrophone();
 
-  const { isSpeaking, speak, cancel } = useSpeechSynthesis(useVoice);
-
   const {
     isLoading,
+    isSpeaking,
     startInterview: startInterviewFlow,
     sendMessage: sendInterviewMessage,
     generateFeedback: generateInterviewFeedback,
@@ -55,7 +53,7 @@ export default function InterviewSimulator() {
     questionCount,
     setQuestionCount,
     setExpression,
-    speak,
+    useVoice,
     setStage,
   });
 
@@ -73,22 +71,26 @@ export default function InterviewSimulator() {
     }
 
     try {
+      setStage("interview");
       const initialMessages = await startInterviewFlow();
       setMessages(initialMessages);
-      setStage("interview");
     } catch (error) {
       console.error("Error starting interview:", error);
       alert(
         "Failed to start interview. Please check that the API is configured correctly.",
       );
+      setStage("setup");
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!userInput.trim() || isLoading) return;
+  const handleSendMessageWithText = async (
+    text: string,
+    currentMessages: Message[] = messages,
+  ) => {
+    if (!text.trim() || isLoading) return;
 
     try {
-      const updatedMessages = await sendInterviewMessage(messages, userInput);
+      const updatedMessages = await sendInterviewMessage(currentMessages, text);
       setMessages(updatedMessages);
       setUserInput("");
 
@@ -113,6 +115,10 @@ export default function InterviewSimulator() {
     }
   };
 
+  const handleSendMessage = async () => {
+    await handleSendMessageWithText(userInput);
+  };
+
   const handleStartRecording = async () => {
     try {
       await startMicRecording();
@@ -126,6 +132,14 @@ export default function InterviewSimulator() {
       const transcribedText = await stopMicRecording();
       if (transcribedText) {
         setUserInput(transcribedText);
+
+        // Immediately show the user's message in the conversation
+        const userMessage: Message = { role: "user", content: transcribedText };
+        const updatedMessages = [...messages, userMessage];
+        setMessages(updatedMessages);
+
+        // Then send to API and get AI response
+        await handleSendMessageWithText(transcribedText, updatedMessages);
       }
     } catch (error) {
       console.error("Recording error:", error);
@@ -146,7 +160,6 @@ export default function InterviewSimulator() {
     setQuestionCount(0);
     setFeedback(null);
     setExpression("neutral");
-    cancel();
   };
 
   if (stage === "setup") {
@@ -180,19 +193,14 @@ export default function InterviewSimulator() {
         experience={experience}
         questionCount={questionCount}
         messages={messages}
-        userInput={userInput}
-        setUserInput={setUserInput}
         isLoading={isLoading}
         isSpeaking={isSpeaking}
         isListening={isListening}
         isRecording={isRecording}
         expression={expression}
-        useVoice={useVoice}
         debugInfo={debugInfo}
-        onSendMessage={handleSendMessage}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
-        onKeyPress={handleKeyPress}
       />
     );
   }

@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MicPermission } from "../types";
+import { speechToText } from "@/app/lib/django-client";
 
 export const useMicrophone = () => {
   const [micPermission, setMicPermission] = useState<MicPermission>("unknown");
@@ -8,7 +9,9 @@ export const useMicrophone = () => {
   const [debugInfo, setDebugInfo] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const transcriptionResolverRef = useRef<((text: string | null) => void) | null>(null);
+  const transcriptionResolverRef = useRef<
+    ((text: string | null) => void) | null
+  >(null);
 
   useEffect(() => {
     checkMicrophoneSupport();
@@ -83,22 +86,11 @@ export const useMicrophone = () => {
         stream.getTracks().forEach((track) => track.stop());
 
         try {
-          const formData = new FormData();
-          formData.append("audio", audioBlob);
-
-          const response = await fetch("/api/speech-to-text", {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!response.ok) {
-            throw new Error("Transcription failed");
-          }
-
-          const data = await response.json();
+          // Use Django backend for speech-to-text
+          const data = await speechToText(audioBlob);
           const transcribedText = data.text;
           setDebugInfo(`✅ Captured: "${transcribedText}"`);
-          
+
           if (transcriptionResolverRef.current) {
             transcriptionResolverRef.current(transcribedText);
             transcriptionResolverRef.current = null;
@@ -106,7 +98,7 @@ export const useMicrophone = () => {
         } catch (error) {
           console.error("Transcription error:", error);
           setDebugInfo("❌ Failed to transcribe. Please try again.");
-          
+
           if (transcriptionResolverRef.current) {
             transcriptionResolverRef.current(null);
             transcriptionResolverRef.current = null;
@@ -134,11 +126,11 @@ export const useMicrophone = () => {
       try {
         mediaRecorderRef.current.stop();
         setDebugInfo("⏹️ Stopping recording...");
-        
+
         // Return a promise that resolves when transcription is complete
         return new Promise<string | null>((resolve) => {
           transcriptionResolverRef.current = resolve;
-          
+
           // Timeout after 15 seconds
           setTimeout(() => {
             if (transcriptionResolverRef.current === resolve) {
@@ -182,4 +174,3 @@ export const useMicrophone = () => {
     testMicrophone,
   };
 };
-

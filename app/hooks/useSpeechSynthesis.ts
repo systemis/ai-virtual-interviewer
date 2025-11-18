@@ -1,54 +1,68 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
+import { textToSpeech } from "@/app/lib/django-client";
 
 export const useSpeechSynthesis = (useVoice: boolean) => {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    if ("speechSynthesis" in window) {
-      synthRef.current = window.speechSynthesis;
-    }
-  }, []);
+  const speak = async (text: string): Promise<void> => {
+    if (!useVoice || !text) return Promise.resolve();
 
-  const speak = (text: string): Promise<void> => {
-    if (!synthRef.current || !useVoice) return Promise.resolve();
-
-    return new Promise((resolve) => {
-      synthRef.current!.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-
-      const voices = synthRef.current!.getVoices();
-      const preferredVoice = voices.find(
-        (voice) =>
-          voice.name.includes("Google") ||
-          voice.name.includes("Microsoft") ||
-          voice.lang === "en-US",
-      );
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
+    try {
+      // Cancel any ongoing speech
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        resolve();
-      };
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        resolve();
-      };
+      setIsSpeaking(true);
 
-      synthRef.current!.speak(utterance);
-    });
+      // Call Django TTS backend
+      const response = await textToSpeech({
+        text,
+        voice: "en-US-AriaNeural", // Edge TTS voice
+        format: "base64",
+      });
+
+      // Create audio element from base64
+      const audio = new Audio(`data:audio/mp3;base64,${response.audio}`);
+      audioRef.current = audio;
+
+      return new Promise((resolve, reject) => {
+        audio.onended = () => {
+          setIsSpeaking(false);
+          audioRef.current = null;
+          resolve();
+        };
+
+        audio.onerror = (error) => {
+          console.error("Audio playback error:", error);
+          setIsSpeaking(false);
+          audioRef.current = null;
+          reject(error);
+        };
+
+        audio.play().catch((error) => {
+          console.error("Failed to play audio:", error);
+          setIsSpeaking(false);
+          audioRef.current = null;
+          reject(error);
+        });
+      });
+    } catch (error) {
+      console.error("TTS error:", error);
+      setIsSpeaking(false);
+      audioRef.current = null;
+      throw error;
+    }
   };
 
   const cancel = () => {
-    if (synthRef.current) {
-      synthRef.current.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+      setIsSpeaking(false);
     }
   };
 
@@ -58,4 +72,3 @@ export const useSpeechSynthesis = (useVoice: boolean) => {
     cancel,
   };
 };
-
