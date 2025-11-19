@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Expression, Feedback, Message } from "../types";
-import { chatWithAudio } from "../lib/django-client";
+import { chatWithAudio, voiceConversation } from "../lib/django-client";
 
 interface UseInterviewParams {
   jobRole: string;
@@ -182,8 +182,7 @@ Keep responses concise and conversational (2-3 sentences max). If this is questi
     const fullConversation = conversationMessages
       .map(
         (msg) =>
-          `${msg.role === "interviewer" ? "Interviewer" : "Candidate"}: ${
-            msg.content
+          `${msg.role === "interviewer" ? "Interviewer" : "Candidate"}: ${msg.content
           }`,
       )
       .join("\n\n");
@@ -251,11 +250,82 @@ Be encouraging but honest. Focus on specific examples from the conversation.`;
     }
   };
 
+  const sendVoiceMessage = async (
+    messages: Message[],
+    audioBlob: Blob,
+  ): Promise<Message[]> => {
+    if (isLoading) return messages;
+
+    setIsLoading(true);
+    setExpression("listening");
+
+    const conversationHistory = messages.map((msg) => ({
+      role: msg.role === "interviewer" ? "assistant" : "user",
+      content: msg.content,
+    }));
+
+    const systemPrompt = `You are a professional interviewer conducting a ${interviewType} interview for a ${jobRole} position. The candidate has ${experience} experience.
+
+Your role:
+- Ask relevant, thoughtful questions appropriate for the role and experience level
+- Listen carefully to responses and ask natural follow-up questions
+- Be encouraging but professional
+- You've asked ${questionCount} questions so far
+- After 5-7 questions, thank them and end the interview by saying "That concludes our interview. Thank you for your time."
+
+Keep responses concise and conversational (2-3 sentences max). If this is question 5-7, wrap up the interview.`;
+
+    try {
+      const data = await voiceConversation({
+        audio: audioBlob,
+        messages: conversationHistory as Array<{
+          role: "user" | "assistant" | "system";
+          content: string;
+        }>,
+        system_prompt: systemPrompt,
+        include_audio: useVoice,
+      });
+
+      const userText = data.user_text;
+      const interviewerMessage = data.assistant_text;
+
+      const newMessages: Message[] = [
+        ...messages,
+        { role: "user", content: userText },
+        { role: "interviewer", content: interviewerMessage },
+      ];
+
+      const isInterviewComplete =
+        interviewerMessage.toLowerCase().includes("concludes our interview") ||
+        interviewerMessage.toLowerCase().includes("thank you for your time");
+
+      if (isInterviewComplete) {
+        setExpression("encouraging");
+      } else {
+        setQuestionCount((prev) => prev + 1);
+        setExpression("encouraging");
+      }
+
+      // Play audio if included in response
+      if (data.audio?.data) {
+        await playAudio(data.audio.data);
+      }
+
+      return newMessages;
+    } catch (error) {
+      console.error("Error sending voice message:", error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     isLoading,
     isSpeaking,
     startInterview,
     sendMessage,
+    sendVoiceMessage,
     generateFeedback,
   };
 };

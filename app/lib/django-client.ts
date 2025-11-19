@@ -82,7 +82,7 @@ export async function callAnthropicAPI(params: {
 
   return chatCompletion({
     provider: "anthropic",
-    model: model || "claude-sonnet-4-20250514",
+    model: model || "claude-3-haiku-20240307",
     messages: formattedMessages,
     max_tokens: maxTokens,
     temperature: 0.7,
@@ -255,7 +255,7 @@ export async function chatWithAudio(
       body: JSON.stringify({
         messages: request.messages,
         system: request.system,
-        model: request.model || "claude-sonnet-4-20250514",
+        model: request.model || "claude-3-haiku-20240307",
         max_tokens: request.max_tokens || 1000,
         include_audio: request.include_audio !== false, // default true
         voice: request.voice || "en-US-AriaNeural",
@@ -331,6 +331,189 @@ export async function speechToText(
     return data;
   } catch (error) {
     console.error("Django STT Error:", error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// VOICE CHAT API - Unified Voice Interaction Pipeline
+// ============================================================================
+
+export interface VoiceChatRequest {
+  audio: Blob;
+  provider?: "openai" | "anthropic";
+  model?: string;
+  voice?: string;
+  system_prompt?: string;
+  conversation_history?: Array<{ role: "user" | "assistant"; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  include_audio?: boolean;
+  language?: string;
+}
+
+export interface VoiceChatResponse {
+  user_text: string;
+  assistant_text: string;
+  audio?: {
+    data: string; // base64 encoded audio
+    provider: string;
+    content_type: string;
+    encoding: string;
+    voice: string;
+  };
+  metadata: {
+    provider: string;
+    model: string;
+    temperature: number;
+    max_tokens: number;
+  };
+  success: boolean;
+}
+
+export interface VoiceConversationRequest {
+  audio: Blob;
+  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  system_prompt?: string;
+  provider?: "openai" | "anthropic";
+  model?: string;
+  voice?: string;
+  temperature?: number;
+  max_tokens?: number;
+  include_audio?: boolean;
+}
+
+/**
+ * Complete voice interaction pipeline: Speech → Text → LLM → Text → Speech
+ * Single API call handles entire voice conversation flow
+ *
+ * @param request - Voice chat request parameters
+ * @returns Complete voice interaction response with transcription, LLM response, and audio
+ *
+ * @example
+ * ```typescript
+ * const audioBlob = await recordAudio();
+ * const response = await voiceChat({
+ *   audio: audioBlob,
+ *   provider: "anthropic",
+ *   system_prompt: "You are a helpful assistant",
+ *   voice: "aria",
+ *   include_audio: true
+ * });
+ *
+ * console.log("User said:", response.user_text);
+ * console.log("Assistant replied:", response.assistant_text);
+ * if (response.audio) {
+ *   playAudio(response.audio.data); // Play base64 audio
+ * }
+ * ```
+ */
+export async function voiceChat(
+  request: VoiceChatRequest,
+): Promise<VoiceChatResponse> {
+  try {
+    const formData = new FormData();
+    formData.append("audio", request.audio, "recording.webm");
+
+    // Add optional parameters
+    if (request.provider) formData.append("provider", request.provider);
+    if (request.model) formData.append("model", request.model);
+    if (request.voice) formData.append("voice", request.voice);
+    if (request.system_prompt)
+      formData.append("system_prompt", request.system_prompt);
+    if (request.temperature !== undefined)
+      formData.append("temperature", request.temperature.toString());
+    if (request.max_tokens !== undefined)
+      formData.append("max_tokens", request.max_tokens.toString());
+    if (request.include_audio !== undefined)
+      formData.append("include_audio", request.include_audio.toString());
+    if (request.language) formData.append("language", request.language);
+
+    // Add conversation history if provided
+    if (request.conversation_history) {
+      formData.append(
+        "conversation_history",
+        JSON.stringify(request.conversation_history),
+      );
+    }
+
+    const response = await fetch(`${DJANGO_API_URL}/voice-chat`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Voice chat failed");
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Django Voice Chat Error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Voice conversation with full message history management
+ * Enhanced version with explicit conversation context
+ *
+ * @param request - Voice conversation request with full message history
+ * @returns Voice interaction response
+ *
+ * @example
+ * ```typescript
+ * const messages = [
+ *   { role: "system", content: "You are a helpful assistant" },
+ *   { role: "user", content: "Hello" },
+ *   { role: "assistant", content: "Hi! How can I help?" }
+ * ];
+ *
+ * const audioBlob = await recordAudio();
+ * const response = await voiceConversation({
+ *   audio: audioBlob,
+ *   messages: messages,
+ *   provider: "anthropic",
+ *   voice: "aria"
+ * });
+ * ```
+ */
+export async function voiceConversation(
+  request: VoiceConversationRequest,
+): Promise<VoiceChatResponse> {
+  try {
+    const formData = new FormData();
+    formData.append("audio", request.audio, "recording.webm");
+    formData.append("messages", JSON.stringify(request.messages));
+
+    // Add optional parameters
+    if (request.system_prompt)
+      formData.append("system_prompt", request.system_prompt);
+    if (request.provider) formData.append("provider", request.provider);
+    if (request.model) formData.append("model", request.model);
+    if (request.voice) formData.append("voice", request.voice);
+    if (request.temperature !== undefined)
+      formData.append("temperature", request.temperature.toString());
+    if (request.max_tokens !== undefined)
+      formData.append("max_tokens", request.max_tokens.toString());
+    if (request.include_audio !== undefined)
+      formData.append("include_audio", request.include_audio.toString());
+
+    const response = await fetch(`${DJANGO_API_URL}/voice-conversation`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Voice conversation failed");
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Django Voice Conversation Error:", error);
     throw error;
   }
 }

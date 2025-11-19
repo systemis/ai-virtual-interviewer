@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { MicPermission } from "../types";
-import { speechToText } from "@/app/lib/django-client";
 
 export const useMicrophone = () => {
   const [micPermission, setMicPermission] = useState<MicPermission>("unknown");
@@ -10,7 +9,7 @@ export const useMicrophone = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const transcriptionResolverRef = useRef<
-    ((text: string | null) => void) | null
+    ((blob: Blob | null) => void) | null
   >(null);
 
   useEffect(() => {
@@ -86,18 +85,15 @@ export const useMicrophone = () => {
         stream.getTracks().forEach((track) => track.stop());
 
         try {
-          // Use Django backend for speech-to-text
-          const data = await speechToText(audioBlob);
-          const transcribedText = data.text;
-          setDebugInfo(`✅ Captured: "${transcribedText}"`);
+          setDebugInfo(`✅ Captured audio blob`);
 
           if (transcriptionResolverRef.current) {
-            transcriptionResolverRef.current(transcribedText);
+            transcriptionResolverRef.current(audioBlob);
             transcriptionResolverRef.current = null;
           }
         } catch (error) {
-          console.error("Transcription error:", error);
-          setDebugInfo("❌ Failed to transcribe. Please try again.");
+          console.error("Audio processing error:", error);
+          setDebugInfo("❌ Failed to process audio.");
 
           if (transcriptionResolverRef.current) {
             transcriptionResolverRef.current(null);
@@ -120,24 +116,30 @@ export const useMicrophone = () => {
     }
   };
 
-  const stopRecording = (): Promise<string | null> => {
+  const stopRecording = (): Promise<Blob | null> => {
     console.log("🛑 Stop recording button clicked");
     if (mediaRecorderRef.current && isRecording) {
       try {
         mediaRecorderRef.current.stop();
         setDebugInfo("⏹️ Stopping recording...");
 
-        // Return a promise that resolves when transcription is complete
-        return new Promise<string | null>((resolve) => {
-          transcriptionResolverRef.current = resolve;
+        // Return a promise that resolves when the blob is ready
+        return new Promise<Blob | null>((resolve) => {
+          // We need to wait for the 'stop' event to fire on the media recorder
+          // The actual data is collected in onstop handler
 
-          // Timeout after 15 seconds
+          // Store the resolve function to be called in onstop
+          // We'll cast it to any to bypass the type mismatch with the ref's current type signature
+          // which we'll fix in the next step
+          (transcriptionResolverRef as any).current = resolve;
+
+          // Timeout after 5 seconds
           setTimeout(() => {
-            if (transcriptionResolverRef.current === resolve) {
-              transcriptionResolverRef.current = null;
+            if ((transcriptionResolverRef as any).current === resolve) {
+              (transcriptionResolverRef as any).current = null;
               resolve(null);
             }
-          }, 15000);
+          }, 5000);
         });
       } catch (error) {
         console.error("Error stopping recording:", error);
