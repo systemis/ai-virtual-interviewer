@@ -1,14 +1,30 @@
-# Supabase Database Setup for Interview Storage
+# Interview Storage Setup (Backend-Based)
 
-This guide explains how to set up the Supabase database to store interview data and feedback.
+This guide explains how the interview system saves data to Supabase through the Django backend.
 
 ## Overview
 
-The interview system now automatically saves completed interviews to Supabase, including:
+The interview system automatically saves completed interviews to Supabase **via the Django backend**, including:
 - Interview configuration (job role, experience level, interview type)
 - Full conversation history (all messages between interviewer and user)
 - AI-generated feedback with scores
 - Completion timestamp
+
+**Important**: All database operations go through the Django backend API. The frontend does NOT directly access Supabase for data storage (only for authentication).
+
+## Architecture
+
+```
+Frontend (React/Next.js)
+    ↓
+    | HTTP POST /api/interviews/save
+    ↓
+Django Backend
+    ↓
+    | Supabase Python Client
+    ↓
+Supabase Database
+```
 
 ## Database Setup Instructions
 
@@ -59,28 +75,47 @@ After running the migration, verify the table was created:
 | `completed_at` | TIMESTAMPTZ | When interview was completed |
 | `created_at` | TIMESTAMPTZ | When record was created (auto) |
 
-## Security (Row Level Security)
+## Backend API
 
-The database is configured with RLS policies:
+### Django Endpoint: `POST /api/interviews/save`
 
-- ✅ **Authenticated users** can only view, insert, update, and delete their own interviews
-- ✅ User data is automatically isolated by `user_id`
-- ✅ Prevents unauthorized access to other users' interview data
+**Location**: `/backend/llm_api/views/interview_views.py`
 
-### Optional: Enable Anonymous Interview Storage
+**Request Body**:
+```json
+{
+  "user_id": "optional-user-uuid",
+  "job_role": "Software Engineer",
+  "experience_level": "Mid-level",
+  "interview_type": "Behavioral",
+  "conversation": [
+    {"role": "interviewer", "content": "Tell me about yourself"},
+    {"role": "user", "content": "I'm a software engineer..."}
+  ],
+  "feedback": {
+    "overallScore": 8,
+    "communicationScore": 9,
+    "technicalScore": 7,
+    "strengths": ["Clear communication"],
+    "areasForImprovement": ["More technical depth"],
+    "detailedFeedback": "You performed well...",
+    "recommendations": ["Practice STAR method"]
+  },
+  "question_count": 5
+}
+```
 
-If you want to allow non-authenticated users to save interviews, uncomment the following policies in the migration script:
-
-```sql
-CREATE POLICY "Anonymous users can insert interviews"
-  ON interviews
-  FOR INSERT
-  WITH CHECK (true);
-
-CREATE POLICY "Anonymous users can view interviews without user_id"
-  ON interviews
-  FOR SELECT
-  USING (user_id IS NULL);
+**Response** (Success):
+```json
+{
+  "success": true,
+  "message": "Interview saved successfully",
+  "data": {
+    "id": "uuid-here",
+    "created_at": "2024-11-20T...",
+    ...
+  }
+}
 ```
 
 ## How It Works
@@ -90,92 +125,67 @@ CREATE POLICY "Anonymous users can view interviews without user_id"
 When an interview ends (either by completing all questions or user requesting early termination), the system automatically:
 
 1. Generates AI feedback
-2. Saves the complete interview data to Supabase
-3. Transitions to the feedback screen
+2. Calls Django backend API endpoint
+3. Backend saves to Supabase database
+4. Transitions to the feedback screen
 
 ### Code Integration
 
-The storage happens in three places:
-
-1. **User requests to end interview early** (`useInterview.ts:166-174`)
-   ```typescript
-   await saveInterviewToSupabase({
-     jobRole,
-     experience,
-     interviewType,
-     messages: finalMessages,
-     feedback: feedbackData,
-     questionCount: currentQuestionIndex + 1,
-   });
-   ```
-
-2. **All questions completed naturally** (`useInterview.ts:244-252`)
-   ```typescript
-   await saveInterviewToSupabase({
-     jobRole,
-     experience,
-     interviewType,
-     messages: finalMessages,
-     feedback: feedbackData,
-     questionCount: questions.length,
-   });
-   ```
-
-3. **Manual "View Feedback" button** (`InterviewApp.tsx:168-176`)
-   ```typescript
-   await saveInterviewToSupabase({
-     jobRole,
-     experience,
-     interviewType,
-     messages,
-     feedback: feedbackData,
-     questionCount,
-   });
-   ```
-
-## API Functions
-
-The following functions are available in `app/lib/supabase/interview-service.ts`:
-
-### `saveInterviewToSupabase(params)`
-Saves interview data to Supabase. Returns the saved record or null on error.
-
-### `getUserInterviews()`
-Retrieves all interviews for the currently authenticated user.
-
-### `getInterviewById(id)`
-Retrieves a specific interview by ID.
-
-### `deleteInterview(id)`
-Deletes an interview by ID.
-
-## Example Usage
-
-### Fetching User's Interview History
-
+**Frontend** (`useInterview.ts` and `InterviewApp.tsx`):
 ```typescript
-import { getUserInterviews } from './lib/supabase/interview-service';
+import { saveInterview } from "../lib/django-client";
 
-// Get all interviews for current user
-const interviews = await getUserInterviews();
-
-console.log(`You have completed ${interviews.length} interviews`);
-interviews.forEach(interview => {
-  console.log(`${interview.job_role} - Score: ${interview.overall_score}/10`);
+// Save interview via Django backend
+await saveInterview({
+  jobRole,
+  experience,
+  interviewType,
+  messages,
+  feedback: feedbackData,
+  questionCount,
 });
 ```
 
-### Retrieving a Specific Interview
+**Backend** (`llm_api/supabase_client.py`):
+```python
+def save_complete_interview(
+    user_id, job_role, experience_level,
+    interview_type, conversation, feedback, question_count
+):
+    interview_data = {
+        'user_id': user_id,
+        'job_role': job_role,
+        'experience_level': experience_level,
+        'interview_type': interview_type,
+        'conversation': conversation,
+        'feedback': feedback,
+        'overall_score': feedback.get('overallScore'),
+        'communication_score': feedback.get('communicationScore'),
+        'technical_score': feedback.get('technicalScore'),
+        'question_count': question_count,
+        'completed_at': datetime.utcnow().isoformat()
+    }
 
-```typescript
-import { getInterviewById } from './lib/supabase/interview-service';
-
-const interview = await getInterviewById('uuid-here');
-if (interview) {
-  console.log('Conversation:', interview.conversation);
-  console.log('Feedback:', interview.feedback);
-}
+    response = supabase.table('interviews').insert(interview_data).execute()
+    return response.data[0]
 ```
+
+## Security
+
+### Row Level Security (RLS)
+
+The database is configured with RLS policies:
+
+- ✅ **Authenticated users** can only view, insert, update, and delete their own interviews
+- ✅ User data is automatically isolated by `user_id`
+- ✅ Prevents unauthorized access to other users' interview data
+
+### Backend Security
+
+- Django backend uses **service role key** for database operations
+- Frontend cannot directly access database (except auth)
+- All data validation happens in Django serializers
+- CORS configured to only allow frontend origin
 
 ## Querying the Database
 
@@ -215,37 +225,68 @@ ORDER BY overall_score DESC;
 
 To test the integration:
 
-1. Complete an interview (either all questions or request early end)
-2. Wait for feedback screen to appear
-3. Go to Supabase Table Editor
-4. Check the `interviews` table - you should see a new record
-5. Verify the JSON fields contain your conversation and feedback
+1. **Start Django backend**: `cd backend && python manage.py runserver`
+2. **Start frontend**: `cd frontend && npm run dev`
+3. Complete an interview (either all questions or request early end)
+4. Check browser console for "Interview saved successfully"
+5. Go to Supabase Table Editor → `interviews` table
+6. Verify a new record was created with your conversation and feedback
 
 ## Troubleshooting
 
 ### Data Not Saving
 
-1. **Check browser console** for error messages
-2. **Verify Supabase connection**: Make sure `.env.local` has correct credentials
-3. **Check RLS policies**: Ensure your user has permission to insert
-4. **Look at Supabase logs**: Go to Logs section in Supabase dashboard
+1. **Check Django backend is running**: `http://localhost:8000/api/health`
+2. **Check browser console** for error messages
+3. **Check Django logs** in the terminal where you ran `runserver`
+4. **Verify Supabase connection**: Check `.env` file in backend folder
+5. **Check RLS policies**: Ensure the migration script ran successfully
 
 ### Permission Errors
 
 If you get permission errors:
 - Verify the migration script ran successfully
 - Check that RLS policies were created
-- Ensure user is authenticated (or enable anonymous policies)
+- Ensure Django backend is using service role key (not anon key)
+
+### CORS Errors
+
+If you get CORS errors:
+- Check Django `settings.py` has your frontend URL in `CORS_ALLOWED_ORIGINS`
+- Default: `http://localhost:3000`
 
 ## Next Steps
 
-- Build an interview history dashboard
+Potential features to add:
+
+- Build an interview history dashboard (fetch from backend API)
 - Add analytics and progress tracking
 - Export interviews to PDF
 - Compare scores across multiple interviews
 - Add search and filter functionality
+- Create Django admin interface for viewing interviews
+
+## API Endpoints (To Be Implemented)
+
+You can extend the backend with additional endpoints:
+
+```python
+# Get user's interview history
+GET /api/interviews/list?user_id=uuid
+
+# Get specific interview
+GET /api/interviews/<id>
+
+# Delete interview
+DELETE /api/interviews/<id>
+
+# Get interview statistics
+GET /api/interviews/stats?user_id=uuid
+```
 
 ---
 
 **Questions or Issues?**
-Check the console logs for detailed error messages or review the Supabase logs in your dashboard.
+- Check browser console for frontend errors
+- Check Django terminal logs for backend errors
+- Review Supabase logs in dashboard for database errors

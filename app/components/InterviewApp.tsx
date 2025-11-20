@@ -158,22 +158,28 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
 
   const handleFinishInterview = async () => {
     try {
-      // Import the save function
-      const { saveInterviewToSupabase } = await import("../lib/supabase/interview-service");
+      // Import the save function from Django client
+      const { saveInterview } = await import("../lib/django-client");
 
       // Generate feedback from current conversation
       const feedbackData = await generateInterviewFeedback(messages);
       setFeedback(feedbackData);
 
-      // Save interview to Supabase
-      await saveInterviewToSupabase({
-        jobRole,
-        experience,
-        interviewType,
-        messages,
-        feedback: feedbackData,
-        questionCount,
-      });
+      // Save interview to backend via Django API
+      try {
+        await saveInterview({
+          jobRole,
+          experience,
+          interviewType,
+          messages,
+          feedback: feedbackData,
+          questionCount,
+        });
+        console.log("Interview saved successfully");
+      } catch (saveError) {
+        console.error("Failed to save interview:", saveError);
+        // Continue to feedback screen even if save fails
+      }
 
       setStage("feedback");
     } catch (error) {

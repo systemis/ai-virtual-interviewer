@@ -517,3 +517,90 @@ export async function voiceConversation(
     throw error;
   }
 }
+
+/**
+ * Save completed interview data to the backend
+ */
+export interface SaveInterviewRequest {
+  user_id?: string | null;
+  jobRole: string;
+  experience: string;
+  interviewType: string;
+  messages: Array<{ role: string; content: string }>;
+  feedback: {
+    overallScore: number;
+    communicationScore: number;
+    technicalScore: number;
+    strengths: string[];
+    areasForImprovement: string[];
+    detailedFeedback: string;
+    recommendations: string[];
+  };
+  questionCount: number;
+}
+
+export interface SaveInterviewResponse {
+  success: boolean;
+  message: string;
+  data?: any;
+  error?: string;
+}
+
+export async function saveInterview(
+  request: SaveInterviewRequest
+): Promise<SaveInterviewResponse> {
+  try {
+    const response = await fetch(`${DJANGO_API_URL}/interviews/save`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: request.user_id || null,
+        job_role: request.jobRole,
+        experience_level: request.experience,
+        interview_type: request.interviewType,
+        conversation: request.messages,
+        feedback: request.feedback,
+        question_count: request.questionCount,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Failed to save interview");
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("Error saving interview:", error);
+    throw error;
+  }
+}
+
+export async function getInterviewHistory(userId?: string): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (userId) {
+      params.append("user_id", userId);
+    }
+
+    const response = await fetch(`${DJANGO_API_URL}/interviews/history?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data;
+  } catch (error) {
+    console.error("Error fetching interview history:", error);
+    throw error;
+  }
+}

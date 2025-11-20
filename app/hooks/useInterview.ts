@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { Expression, Feedback, Message } from "../types";
-import { chatWithAudio, speechToText, chatCompletion } from "../lib/django-client";
-import { saveInterviewToSupabase } from "../lib/supabase/interview-service";
+import { chatWithAudio, speechToText, chatCompletion, saveInterview } from "../lib/django-client";
 
 interface UseInterviewParams {
   jobRole: string;
@@ -163,15 +162,21 @@ export const useInterview = ({
       const feedbackData = await generateFeedbackInternal(finalMessages);
       setFeedback(feedbackData);
 
-      // Save interview to Supabase
-      await saveInterviewToSupabase({
-        jobRole,
-        experience,
-        interviewType,
-        messages: finalMessages,
-        feedback: feedbackData,
-        questionCount: currentQuestionIndex + 1,
-      });
+      // Save interview to backend via Django API
+      try {
+        await saveInterview({
+          jobRole,
+          experience,
+          interviewType,
+          messages: finalMessages,
+          feedback: feedbackData,
+          questionCount: currentQuestionIndex + 1,
+        });
+        console.log("Interview saved successfully");
+      } catch (error) {
+        console.error("Failed to save interview:", error);
+        // Continue to feedback screen even if save fails
+      }
 
       setStage("feedback");
 
@@ -241,15 +246,21 @@ export const useInterview = ({
         const feedbackData = await generateFeedbackInternal(finalMessages);
         setFeedback(feedbackData);
 
-        // Save interview to Supabase
-        await saveInterviewToSupabase({
-          jobRole,
-          experience,
-          interviewType,
-          messages: finalMessages,
-          feedback: feedbackData,
-          questionCount: questions.length,
-        });
+        // Save interview to backend via Django API
+        try {
+          await saveInterview({
+            jobRole,
+            experience,
+            interviewType,
+            messages: finalMessages,
+            feedback: feedbackData,
+            questionCount: questions.length,
+          });
+          console.log("Interview saved successfully");
+        } catch (error) {
+          console.error("Failed to save interview:", error);
+          // Continue to feedback screen even if save fails
+        }
 
         setStage("feedback");
 
