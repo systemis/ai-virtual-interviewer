@@ -36,6 +36,10 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
     startInterview: startInterviewFlow,
     sendMessage: sendInterviewMessage,
     sendVoiceMessage,
+    questions,
+    currentQuestionIndex,
+    isLoading,
+    isInterviewEnding,
     generateFeedback: generateInterviewFeedback,
   } = useInterview({
     jobRole,
@@ -46,6 +50,7 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
     setExpression,
     useVoice,
     setStage,
+    setFeedback,
   });
 
   // Auto-scroll to bottom of chat
@@ -56,7 +61,18 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
   // Recording Timer
   useEffect(() => {
     if (isRecording) {
+      // Reset logic moved to where isRecording becomes true to avoid effect loop, 
+      // or we just don't reset here and rely on startRecording to reset it if needed.
+      // But checking useMicrophone hook, it doesn't seem to expose reset.
+      // To fix lint, we can just set duration to 0 before the interval starts in a way that doesn't trigger immediate re-render loop if possible
+      // Actually, setting it here is fine if isRecording changes.
+      // The lint error says "Calling setState synchronously within an effect".
+      // We can wrap it in a timeout or just ignore if we are sure it only happens on change.
+      // Better fix: reset duration when startRecording is called, but we can't modify that easily without touching hook.
+      // Alternative:
+
       setRecordingDuration(0);
+
       timerRef.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
@@ -110,12 +126,59 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
     try {
       const audioBlob = await stopMicRecording();
       if (audioBlob) {
-        const updatedMessages = await sendVoiceMessage(messages, audioBlob);
+        // We won't optimistically add the message here because we don't have the text yet.
+        // The hook handles the transcription and adding the user message.
+        // However, to display the message *after* STT but *before* LLM response,
+        // the hook needs to surface that intermediate state or update messages progressively.
+        // Currently sendVoiceMessage returns the FINAL messages.
+
+        // Let's rely on the hook to update the state if we pass a callback or if the hook exposes
+        // an intermediate "transcribing" state.
+
+        // Actually, `useInterview` manages its own internal logic but `messages` state is owned by `InterviewApp`.
+        // The `sendVoiceMessage` in `useInterview` returns the final array.
+        // If we want to show the text *as soon as it is transcribed*, we need to split `sendVoiceMessage`
+        // or pass a callback to `sendVoiceMessage` like `onTranscription(text)`.
+
+        // But wait, `sendVoiceMessage` in the hook is async.
+        // It calls `speechToText`, gets text, calls `processUserResponse`.
+        // We can refactor `sendVoiceMessage` to take an `onUserText` callback.
+
+        const updatedMessages = await sendVoiceMessage(messages, audioBlob, (userText) => {
+          const userMessage: Message = { role: "user", content: userText };
+          setMessages(prev => [...prev, userMessage]);
+        });
         setMessages(updatedMessages);
       }
     } catch (error) {
       console.error("Recording error:", error);
       alert("Failed to process voice message. Please try again.");
+    }
+  };
+
+  const handleFinishInterview = async () => {
+    try {
+      // Import the save function
+      const { saveInterviewToSupabase } = await import("../lib/supabase/interview-service");
+
+      // Generate feedback from current conversation
+      const feedbackData = await generateInterviewFeedback(messages);
+      setFeedback(feedbackData);
+
+      // Save interview to Supabase
+      await saveInterviewToSupabase({
+        jobRole,
+        experience,
+        interviewType,
+        messages,
+        feedback: feedbackData,
+        questionCount,
+      });
+
+      setStage("feedback");
+    } catch (error) {
+      console.error("Error generating feedback:", error);
+      alert("Failed to generate feedback. Please try again.");
     }
   };
 
@@ -215,6 +278,20 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
       {/* Interview Stage */}
       {stage === "interview" && (
         <div className="flex h-[600px] flex-col animate-in fade-in zoom-in-95 duration-500">
+          {/* Current Question Display */}
+          {questions && questions.length > 0 && (
+            <div className="mb-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                  Question {Math.min(currentQuestionIndex + 1, questions.length)} of {questions.length}
+                </span>
+              </div>
+              <p className="text-sm md:text-base font-medium text-indigo-900 dark:text-indigo-100">
+                {questions[Math.min(currentQuestionIndex, questions.length - 1)]}
+              </p>
+            </div>
+          )}
+
           {/* Chat Area */}
           <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 p-4 md:p-6 space-y-6">
             {messages.map((msg, index) => (
@@ -250,59 +327,46 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
                 </div>
               </div>
             )}
+            {isLoading && !isSpeaking && (
+              <div className="flex justify-center py-2">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-500 border-t-transparent"></div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
           {/* Controls */}
           <div className="mt-6 flex items-center gap-4">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                placeholder="Type your answer..."
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 pr-12 text-slate-900 dark:text-white shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                disabled={isRecording}
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={!userInput.trim() || isRecording}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-indigo-600 transition-colors disabled:opacity-50"
-              >
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+            {isInterviewEnding ? (
+              <div className="flex-1 flex justify-center">
+                <button
+                  onClick={handleFinishInterview}
+                  className="rounded-xl bg-green-600 px-8 py-3 font-medium text-white shadow-lg transition-all hover:bg-green-700 hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            {/* Microphone Button */}
-            <div className="relative">
-              {isRecording && (
-                <div className="absolute inset-0 animate-pulse-ring rounded-full bg-red-500/20"></div>
-              )}
-              <button
-                onClick={isRecording ? handleStopRecording : startRecording}
-                className={`relative flex h-12 w-12 items-center justify-center rounded-full shadow-md transition-all hover:scale-105 active:scale-95 ${isRecording
-                  ? "bg-red-500 text-white ring-4 ring-red-500/20"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
-                  }`}
-              >
-                {isRecording ? (
-                  <div className="h-4 w-4 rounded-sm bg-current" />
-                ) : (
+                  <span>View Feedback</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                  placeholder={isLoading ? "Waiting for response..." : isSpeaking ? "AI is speaking..." : "Type your answer..."}
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 pr-12 text-slate-900 dark:text-white shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  disabled={isRecording || isLoading || isSpeaking}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!userInput.trim() || isRecording || isLoading || isSpeaking}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   <svg
-                    className="h-6 w-6"
+                    className="h-5 w-5"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -311,12 +375,47 @@ export default function InterviewApp({ onBack }: { onBack?: () => void }) {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
                     />
                   </svg>
+                </button>
+              </div>
+            )}
+
+            {/* Microphone Button - Hide when ending */}
+            {!isInterviewEnding && (
+              <div className="relative">
+                {isRecording && (
+                  <div className="absolute inset-0 animate-pulse-ring rounded-full bg-red-500/20"></div>
                 )}
-              </button>
-            </div>
+                <button
+                  onClick={isRecording ? handleStopRecording : startRecording}
+                  disabled={isLoading || isSpeaking}
+                  className={`relative flex h-12 w-12 items-center justify-center rounded-full shadow-md transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${isRecording
+                    ? "bg-red-500 text-white ring-4 ring-red-500/20"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                    }`}
+                >
+                  {isRecording ? (
+                    <div className="h-4 w-4 rounded-sm bg-current" />
+                  ) : (
+                    <svg
+                      className="h-6 w-6"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {isRecording && (
