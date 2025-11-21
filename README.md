@@ -34,3 +34,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Development Rules
+
+### Component Structure
+- **Separation of Concerns**: Separate large components into multiple smaller components to keep the codebase clean and maintainable.
+- **Grouping**: Put related components into the same folder. For example, components related to the interview feature should be in `/app/components/interview/`.
+

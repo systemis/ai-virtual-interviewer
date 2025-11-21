@@ -147,59 +147,6 @@ export async function getDjangoBackendStatus(): Promise<HealthCheckResponse | nu
   }
 }
 
-/**
- * Streaming chat completion
- * Returns an async generator for streaming responses
- */
-export async function* chatCompletionStream(
-  request: ChatCompletionRequest,
-): AsyncGenerator<{ content: string; finish_reason?: string }> {
-  const response = await fetch(`${DJANGO_API_URL}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ...request, stream: true }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Stream request failed");
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    throw new Error("No reader available");
-  }
-
-  const decoder = new TextDecoder();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
-
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-
-          try {
-            const parsed = JSON.parse(data);
-            yield parsed;
-          } catch (e) {
-            console.error("Error parsing stream chunk:", e);
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 export interface TextToSpeechRequest {
   text: string;
   voice?: string;

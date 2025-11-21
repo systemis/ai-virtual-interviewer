@@ -82,51 +82,17 @@ mv app/api/chat/route-django.ts app/api/chat/route.ts
 ```
 
 Then use your existing API utility:
-
-```typescript
-import { callClaudeAPI } from '@/app/utils/api-django';
-
-const response = await callClaudeAPI({
-  messages: [{ role: 'user', content: 'Hello!' }],
-  systemPrompt: 'You are a helpful assistant.',
-  maxTokens: 300,
-});
-```
-
 ## Migrating Existing Code
 
 ### Option A: Minimal Changes (Use Compatibility Layer)
 
 Replace imports in your existing code:
 
-```typescript
-// Before
-import { callClaudeAPI } from '@/app/utils/api';
-
-// After
-import { callClaudeAPI } from '@/app/utils/api-django';
-```
-
-The `api-django.ts` module provides the same interface but uses Django backend.
-
 ### Option B: Use New Django Client Directly
 
 For better type safety and features:
 
 ```typescript
-// Before
-import { callClaudeAPI } from '@/app/utils/api';
-
-const response = await callClaudeAPI({
-  messages,
-  systemPrompt,
-  maxTokens: 300,
-});
-
-// Access response
-const text = response.content[0].text;
-
-// After
 import { callAnthropicAPI } from '@/app/lib/django-client';
 
 const response = await callAnthropicAPI({
@@ -251,26 +217,6 @@ const response = await callAnthropicAPI({
 // Access response content
 const assistantMessage = response.content;
 ```
-
-## Streaming Support
-
-For streaming responses:
-
-```typescript
-import { chatCompletionStream } from '@/app/lib/django-client';
-
-const stream = chatCompletionStream({
-  provider: 'anthropic',
-  messages: [...],
-  temperature: 0.7,
-  max_tokens: 1000,
-});
-
-for await (const chunk of stream) {
-  console.log(chunk.content); // Process each chunk
-}
-```
-
 ## Environment Variables
 
 ### Next.js (`.env.local`)

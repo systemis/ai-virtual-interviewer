@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { checkBackendConnection } from "../utils/api";
+import { useEffect, useState } from "react";
+import { checkDjangoBackendHealth } from "../lib/django-client";
 import type { BackendStatus } from "../types";
 
 export const useBackendStatus = () => {
@@ -7,7 +7,7 @@ export const useBackendStatus = () => {
 
   useEffect(() => {
     const checkConnection = async () => {
-      const isConnected = await checkBackendConnection();
+      const isConnected = await checkDjangoBackendHealth();
       setBackendStatus(isConnected ? "connected" : "disconnected");
     };
     checkConnection();

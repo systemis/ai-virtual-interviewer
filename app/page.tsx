@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "./lib/supabase/client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { createClient } from "./lib/supabase/client";
 
 export default function Home() {
   const router = useRouter();

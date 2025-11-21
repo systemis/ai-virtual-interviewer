@@ -1,12 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/app/lib/supabase/client'
 import InterviewApp from '@/app/components/InterviewApp'
+import { createClient } from '@/app/lib/supabase/client'
+import { useEffect, useState } from 'react'
 
 export default function InterviewPage() {
-  const router = useRouter()
   const supabase = createClient()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -36,10 +34,8 @@ export default function InterviewPage() {
         <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-400 dark:bg-purple-900 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
         <div className="absolute -bottom-32 left-1/3 w-96 h-96 bg-pink-400 dark:bg-pink-900 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
       </div>
-
-      {/* Interview App */}
-      <div className="relative z-10 pt-20 w-full flex justify-center p-4">
-        <InterviewApp onBack={() => router.push('/')} />
+      <div className="relative z-10 w-full flex justify-center p-4 pt-40">
+        <InterviewApp />
       </div>
     </div>
   )
